@@ -453,59 +453,66 @@ async fn many_messages() {
     server.listen(server_config.build());
     let server_sock = UdpSocket::bind(SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), 0)).unwrap();
     let server_addr = server_sock.local_addr().unwrap();
-    let (server, mut server_incoming) = { server.with_socket(server_sock).unwrap() };
+    let (_server, mut server_incoming) = { server.with_socket(server_sock).unwrap() };
 
     let mut tasks = Vec::new();
 
     // Receiver
     tasks.push(tokio::spawn({
         async move {
-            for _ in 0..num_messages {
+            let mut readed = 0;
+            while readed != num_messages {
                 let incoming = server_incoming.next().await.unwrap();
                 let new_conn = incoming.instrument(info_span!("server")).await.unwrap();
                 new_conn
                     .uni_streams
                     .take_while(|x| future::ready(x.is_ok()))
                     .for_each(|s| {
+                        readed += 1;
                         let _data = s.unwrap().read_to_end(usize::max_value());
                         future::ready(())
                     })
                     .await;
             }
-            server.wait_idle().await;
         }
     }));
 
-    for id in 0..num_messages {
-        tasks.push(tokio::spawn({
-            let mut client_config = ClientConfigBuilder::default();
-            client_config
-                .add_certificate_authority(cert.clone())
-                .unwrap();
-            client_config.enable_keylog();
-            let mut client = Endpoint::builder();
-            client.default_client_config(client_config.build());
-            let (client, _) = {
-                client
-                    .bind(&SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0))
-                    .unwrap()
-            };
+    // Sender
+    tokio::spawn({
+        let mut client_config = ClientConfigBuilder::default();
+        client_config
+            .add_certificate_authority(cert.clone())
+            .unwrap();
+        client_config.enable_keylog();
+        let mut client = Endpoint::builder();
+        client.default_client_config(client_config.build());
+        let (client, _) = {
+            client
+                .bind(&SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0))
+                .unwrap()
+        };
+        let client_conn = client
+            .connect(&server_addr, "localhost")
+            .unwrap()
+            .instrument(info_span!("client"))
+            .await
+            .expect("receiver");
 
-            async move {
-                let new_conn = client
-                    .connect(&server_addr, "localhost")
-                    .unwrap()
-                    .instrument(info_span!("client"))
-                    .await
-                    .expect(&id.to_string());
-                let mut send = new_conn.connection.open_uni().await.expect("stream open");
-                send.write_all(b"foo").await.expect("write");
-                send.finish().await.expect("finish");
-                new_conn.connection.close(0u32.into(), b"done");
-                client.wait_idle().await;
-            }
-        }));
-    }
+        let client_sender = Arc::new(client_conn);
+
+        for _id in 0..num_messages {
+            tokio::spawn({
+                let sender = client_sender.clone();
+                async move {
+                    let mut send = sender.connection.open_uni().await.expect("stream open");
+                    send.write_all(b"foo").await.expect("write");
+                    send.finish().await.expect("finish");
+                }
+            });
+        }
+
+        future::ready(())
+    });
 
     let _ = future::try_join_all(tasks).await;
 }
