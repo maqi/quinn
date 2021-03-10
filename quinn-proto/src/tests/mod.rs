@@ -823,10 +823,11 @@ fn instant_close_1() {
     assert_matches!(
         pair.server_conn_mut(server_ch).poll(),
         Some(Event::ConnectionLost {
-            reason: ConnectionError::ConnectionClosed(ConnectionClose {
-                error_code: TransportErrorCode::APPLICATION_ERROR,
-                ..
-            }),
+            reason:
+                ConnectionError::ConnectionClosed(ConnectionClose {
+                    error_code: TransportErrorCode::APPLICATION_ERROR,
+                    ..
+                }),
         })
     );
 }
@@ -854,10 +855,11 @@ fn instant_close_2() {
     assert_matches!(
         pair.server_conn_mut(server_ch).poll(),
         Some(Event::ConnectionLost {
-            reason: ConnectionError::ConnectionClosed(ConnectionClose {
-                error_code: TransportErrorCode::APPLICATION_ERROR,
-                ..
-            }),
+            reason:
+                ConnectionError::ConnectionClosed(ConnectionClose {
+                    error_code: TransportErrorCode::APPLICATION_ERROR,
+                    ..
+                }),
         })
     );
 }
@@ -919,10 +921,11 @@ fn concurrent_connections_full() {
     assert_matches!(
         pair.client_conn_mut(client_ch).poll(),
         Some(Event::ConnectionLost {
-            reason: ConnectionError::ConnectionClosed(frame::ConnectionClose {
-                error_code: TransportErrorCode::CONNECTION_REFUSED,
-                ..
-            }),
+            reason:
+                ConnectionError::ConnectionClosed(frame::ConnectionClose {
+                    error_code: TransportErrorCode::CONNECTION_REFUSED,
+                    ..
+                }),
         })
     );
     assert_eq!(pair.server.connections.len(), 0);
